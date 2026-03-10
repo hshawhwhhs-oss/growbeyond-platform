@@ -6,11 +6,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Exam, ExamAnswer, ExamSubmission } from "@/types/exam";
 import { uploadToImgBB } from "@/lib/imgbb";
 import { toast } from "sonner";
-import { Camera, Clock, ChevronLeft, ChevronRight, Send, Trophy, CheckCircle, XCircle, ArrowLeft, Award, TrendingDown } from "lucide-react";
+import { Camera, Clock, ChevronLeft, ChevronRight, Send, Trophy, CheckCircle, XCircle, ArrowLeft, Award, TrendingDown, Shield, AlertTriangle, Monitor, Maximize } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useExamSecurity, getDeviceInfo } from "@/hooks/useExamSecurity";
 
 export default function ExamTakePage() {
   const { examId } = useParams<{ examId: string }>();
@@ -31,8 +32,22 @@ export default function ExamTakePage() {
   const [showRankings, setShowRankings] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [myRank, setMyRank] = useState<number | null>(null);
+  const [rulesAccepted, setRulesAccepted] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-submit handler for suspicious activity
+  const handleSuspiciousAutoSubmit = useCallback(() => {
+    toast.error("⚠️ Exam auto-submitted due to suspicious activity!");
+    handleSubmitInternal();
+  }, []);
+
+  // Exam security hook
+  const { requestFullscreen, exitFullscreen, isFullscreen } = useExamSecurity({
+    enabled: started && !submitted,
+    onSuspiciousActivity: handleSuspiciousAutoSubmit,
+    maxTabSwitches: 3,
+  });
 
   useEffect(() => {
     const fetchExam = async () => {
@@ -61,7 +76,7 @@ export default function ExamTakePage() {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
-          handleSubmit();
+          handleSubmitInternal();
           return 0;
         }
         return prev - 1;
@@ -69,6 +84,15 @@ export default function ExamTakePage() {
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [started, submitted]);
+
+  // Cleanup fullscreen on unmount
+  useEffect(() => {
+    return () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+  }, []);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -84,6 +108,7 @@ export default function ExamTakePage() {
     if (!exam) return;
     setTimeLeft(exam.duration * 60);
     setStarted(true);
+    requestFullscreen();
     const initial: Record<string, ExamAnswer> = {};
     exam.questions.forEach(q => {
       initial[q.id] = { questionId: q.id, marks: q.marks };
@@ -115,11 +140,12 @@ export default function ExamTakePage() {
     setUploadingImage(false);
   };
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmitInternal = useCallback(async () => {
     if (!exam || !user || !userDoc || submitting) return;
     setSubmitting(true);
 
     const negativeMark = exam.negativeMark || 0;
+    const deviceInfo = getDeviceInfo();
 
     const answersList: ExamAnswer[] = exam.questions.map(q => {
       const ans = answers[q.id] || { questionId: q.id, marks: q.marks };
@@ -150,6 +176,7 @@ export default function ExamTakePage() {
       wrongCount,
       submittedAt: Timestamp.now(),
       passed,
+      deviceInfo: deviceInfo as any,
     };
 
     try {
@@ -158,13 +185,16 @@ export default function ExamTakePage() {
       setResult(resultSub);
       setSubmitted(true);
       setStarted(false);
+      exitFullscreen();
       if (timerRef.current) clearInterval(timerRef.current);
       toast.success("Exam submitted!");
     } catch (err: any) {
       toast.error(err.message);
     }
     setSubmitting(false);
-  }, [exam, user, userDoc, answers, submitting]);
+  }, [exam, user, userDoc, answers, submitting, exitFullscreen]);
+
+  const handleSubmit = handleSubmitInternal;
 
   const loadRankings = async () => {
     if (!exam || !user) return;
@@ -195,7 +225,6 @@ export default function ExamTakePage() {
           <p className="text-sm text-muted-foreground mb-4">Your Result</p>
           <div className="text-4xl font-bold text-foreground">{result.obtainedMarks}/{result.totalMarks}</div>
           
-          {/* Pass/Fail badge */}
           <div className="mt-3">
             <span className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold ${passed ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-red-500/10 text-destructive"}`}>
               {passed ? <><Award className="h-4 w-4" /> Passed</> : <><TrendingDown className="h-4 w-4" /> Failed</>}
@@ -261,10 +290,9 @@ export default function ExamTakePage() {
                 {q.type === "written" && !ans?.writtenImageUrl && (
                   <p className="text-xs text-muted-foreground italic mt-2">No answer submitted</p>
                 )}
-                {/* Show correct written answer after submission */}
                 {q.type === "written" && q.writtenAnswer && (
                   <div className="mt-2 p-2 bg-green-500/10 rounded-lg">
-                        <p className="text-xs text-muted-foreground mb-1">Correct Answer:</p>
+                    <p className="text-xs text-muted-foreground mb-1">Correct Answer:</p>
                     {q.writtenAnswer.startsWith("http") ? (
                       <img src={q.writtenAnswer} alt="Correct Answer" className="h-32 rounded-lg object-contain" />
                     ) : (
@@ -277,7 +305,7 @@ export default function ExamTakePage() {
           })}
         </div>
 
-        {/* Rankings - only after exam ends AND result published */}
+        {/* Rankings */}
         {examEnded && exam.resultPublished && (
           <div className="mt-6">
             {!showRankings ? (
@@ -329,7 +357,7 @@ export default function ExamTakePage() {
     );
   }
 
-  // Pre-start view
+  // Rules & Pre-start view
   if (!started) {
     return (
       <div className="p-4 max-w-lg mx-auto animate-fade-in">
@@ -337,9 +365,12 @@ export default function ExamTakePage() {
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
 
-        <div className="bg-card border border-border rounded-xl p-6 text-center">
-          <h2 className="text-lg font-semibold text-foreground">{exam.title}</h2>
-          <p className="text-sm text-muted-foreground mt-1">{exam.courseName}</p>
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-foreground">{exam.title}</h2>
+            <p className="text-sm text-muted-foreground mt-1">{exam.courseName}</p>
+          </div>
+          
           <div className="mt-4 space-y-2 text-sm text-muted-foreground">
             <p>Type: <span className="text-foreground font-medium">{exam.questions.filter(q => q.type === "mcq").length > 0 ? "MCQ" : ""}{exam.questions.filter(q => q.type === "mcq").length > 0 && exam.questions.filter(q => q.type === "written").length > 0 ? " + " : ""}{exam.questions.filter(q => q.type === "written").length > 0 ? "Written" : ""}</span></p>
             <p>Questions: <span className="text-foreground font-medium">{exam.questions.length}</span></p>
@@ -351,12 +382,67 @@ export default function ExamTakePage() {
             <p>End: <span className="text-foreground font-medium">{exam.endTime?.toDate?.()?.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, month: 'short', day: 'numeric', year: 'numeric' })}</span></p>
           </div>
 
-          {!examStarted && (
-            <p className="mt-4 text-sm text-warning">Exam hasn't started yet. Please wait.</p>
+          {/* Exam Rules Section */}
+          {examStarted && !examEnded && !existingSubmission && (
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="h-5 w-5 text-primary" />
+                <h3 className="font-semibold text-foreground">Exam Rules & Security</h3>
+              </div>
+              <div className="bg-accent/50 border border-border rounded-lg p-4 space-y-2.5 text-sm text-foreground">
+                <div className="flex items-start gap-2.5">
+                  <Maximize className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <span>Exam will run in <strong>fullscreen mode</strong>. Exiting fullscreen is not allowed.</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                  <span><strong>Tab switching</strong> is monitored. After 3 switches, your exam will be <strong>auto-submitted</strong>.</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                  <span><strong>Copy, Paste, and Right-click</strong> are disabled during the exam.</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Monitor className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <span>Your <strong>device & browser info</strong> will be recorded for security.</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Camera className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <span><strong>Screenshots</strong> are not allowed. PrintScreen key is blocked.</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Clock className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <span>Exam will <strong>auto-submit</strong> when the timer runs out.</span>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 mt-4 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={rulesAccepted} 
+                  onChange={e => setRulesAccepted(e.target.checked)}
+                  className="w-4 h-4 rounded border-border accent-primary"
+                />
+                <span className="text-sm text-foreground">I have read and agree to the exam rules</span>
+              </label>
+
+              <button
+                onClick={startExam}
+                disabled={!rulesAccepted}
+                className="mt-4 w-full py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Shield className="h-4 w-4" /> Start Exam
+              </button>
+            </div>
           )}
+
+          {!examStarted && (
+            <p className="mt-4 text-sm text-center text-warning">Exam hasn't started yet. Please wait.</p>
+          )}
+          
           {examEnded && !existingSubmission && (
             <div className="mt-4">
-              <p className="text-sm text-destructive mb-4">Exam has ended.</p>
+              <p className="text-sm text-destructive mb-4 text-center">Exam has ended.</p>
               <div className="space-y-3">
                 <h3 className="font-medium text-foreground">Correct Answers</h3>
                 {exam.questions.map((q, idx) => (
@@ -395,11 +481,6 @@ export default function ExamTakePage() {
               </div>
             </div>
           )}
-          {examStarted && !examEnded && (
-            <button onClick={startExam} className="mt-6 w-full py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm">
-              Start Exam
-            </button>
-          )}
         </div>
       </div>
     );
@@ -409,7 +490,14 @@ export default function ExamTakePage() {
   const question = exam.questions[currentQ];
 
   return (
-    <div className="p-4 max-w-2xl mx-auto animate-fade-in">
+    <div className="p-4 max-w-2xl mx-auto animate-fade-in select-none">
+      {/* Fullscreen reminder */}
+      {!isFullscreen && started && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-destructive text-destructive-foreground text-center py-2 text-sm font-medium cursor-pointer" onClick={requestFullscreen}>
+          ⚠️ Click here to return to fullscreen mode
+        </div>
+      )}
+
       {/* Timer bar */}
       <div className="sticky top-0 z-40 bg-background border-b border-border -mx-4 px-4 py-2 flex items-center justify-between">
         <span className="text-sm text-foreground font-medium">Q {currentQ + 1}/{exam.questions.length}</span>
@@ -434,7 +522,7 @@ export default function ExamTakePage() {
       <div className="bg-card border border-border rounded-xl p-4">
         <p className="text-sm font-medium text-foreground mb-1">Question {currentQ + 1} <span className="text-muted-foreground">({question.marks} marks)</span></p>
         <p className="text-foreground">{question.questionText}</p>
-        {question.questionImage && <img src={question.questionImage} alt="" className="mt-3 max-h-48 rounded-lg object-contain" />}
+        {question.questionImage && <img src={question.questionImage} alt="" className="mt-3 max-h-48 rounded-lg object-contain pointer-events-none" />}
 
         {question.type === "mcq" && question.options && (
           <div className="mt-4 space-y-2">
@@ -448,7 +536,7 @@ export default function ExamTakePage() {
                     {String.fromCharCode(65 + oIdx)}
                   </span>
                   <span className="flex-1">{opt.text}</span>
-                  {opt.image && <img src={opt.image} alt="" className="h-10 rounded object-contain" />}
+                  {opt.image && <img src={opt.image} alt="" className="h-10 rounded object-contain pointer-events-none" />}
                 </button>
               );
             })}
@@ -464,7 +552,7 @@ export default function ExamTakePage() {
               <Camera className="h-4 w-4" /> {uploadingImage ? "Uploading..." : "Take Photo / Upload Image"}
             </button>
             {answers[question.id]?.writtenImageUrl && (
-              <img src={answers[question.id].writtenImageUrl} alt="Answer" className="mt-3 max-h-48 rounded-lg object-contain mx-auto" />
+              <img src={answers[question.id].writtenImageUrl} alt="Answer" className="mt-3 max-h-48 rounded-lg object-contain mx-auto pointer-events-none" />
             )}
           </div>
         )}
