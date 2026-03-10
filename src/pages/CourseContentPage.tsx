@@ -31,7 +31,7 @@ export default function CourseContentPage() {
       const vids = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Video));
       vids.sort((a, b) => (a.order || 0) - (b.order || 0));
       setVideos(vids);
-      setSubjects([...new Set(vids.map((v) => v.subjectName))]);
+      setSubjects([...new Set(vids.map((v) => v.subjectName))] as string[]);
       setLoading(false);
     };
     fetch();
