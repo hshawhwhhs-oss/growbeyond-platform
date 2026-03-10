@@ -12,6 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useExamSecurity, getDeviceInfo } from "@/hooks/useExamSecurity";
+import { useExamMode } from "@/contexts/ExamModeContext";
 
 export default function ExamTakePage() {
   const { examId } = useParams<{ examId: string }>();
