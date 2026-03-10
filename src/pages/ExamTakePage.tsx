@@ -88,14 +88,21 @@ export default function ExamTakePage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [started, submitted]);
 
-  // Cleanup fullscreen on unmount
+  // Cleanup fullscreen and exam mode on unmount
   useEffect(() => {
     return () => {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
+      exitExamMode();
     };
-  }, []);
+  }, [exitExamMode]);
+
+  // Auto-submit if user navigates away during active exam
+  const startedRef = useRef(false);
+  const submittedRef = useRef(false);
+  startedRef.current = started;
+  submittedRef.current = submitted;
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
