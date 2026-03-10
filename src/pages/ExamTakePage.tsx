@@ -18,6 +18,8 @@ export default function ExamTakePage() {
   const { examId } = useParams<{ examId: string }>();
   const { user, userDoc } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { enterExamMode, exitExamMode, isExamMode } = useExamMode();
   const [exam, setExam] = useState<Exam | null>(null);
   const [loading, setLoading] = useState(true);
   const [answers, setAnswers] = useState<Record<string, ExamAnswer>>({});
