@@ -40,6 +40,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <AppSettingsProvider>
+            <GlobalSecurity />
             <ExternalRedirect />
             <Routes>
               <Route element={<AppLayout />}>
