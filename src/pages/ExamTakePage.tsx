@@ -208,6 +208,7 @@ export default function ExamTakePage() {
       setSubmitted(true);
       setStarted(false);
       exitFullscreen();
+      exitExamMode();
       if (timerRef.current) clearInterval(timerRef.current);
       toast.success("Exam submitted!");
     } catch (err: any) {
