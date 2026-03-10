@@ -118,6 +118,7 @@ export default function ExamTakePage() {
     if (!exam) return;
     setTimeLeft(exam.duration * 60);
     setStarted(true);
+    enterExamMode();
     requestFullscreen();
     const initial: Record<string, ExamAnswer> = {};
     exam.questions.forEach(q => {
@@ -125,6 +126,17 @@ export default function ExamTakePage() {
     });
     setAnswers(initial);
   };
+
+  // Prevent browser close/refresh during exam
+  useEffect(() => {
+    if (!started || submitted) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "You have an active exam. Leaving will auto-submit your exam!";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [started, submitted]);
 
   const selectOption = (questionId: string, optionIdx: number) => {
     setAnswers(prev => ({
