@@ -40,6 +40,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <ExamModeProvider>
           <AppSettingsProvider>
             <GlobalSecurity />
             <ExternalRedirect />
