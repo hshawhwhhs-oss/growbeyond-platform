@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { doc, getDoc, addDoc, collection, getDocs, query, where, Timestamp } from "firebase/firestore";
 import { examDb } from "@/lib/examFirebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,14 +12,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useExamSecurity, getDeviceInfo } from "@/hooks/useExamSecurity";
-import { useExamMode } from "@/contexts/ExamModeContext";
 
 export default function ExamTakePage() {
   const { examId } = useParams<{ examId: string }>();
   const { user, userDoc } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { enterExamMode, exitExamMode, isExamMode } = useExamMode();
   const [exam, setExam] = useState<Exam | null>(null);
   const [loading, setLoading] = useState(true);
   const [answers, setAnswers] = useState<Record<string, ExamAnswer>>({});
@@ -88,21 +85,14 @@ export default function ExamTakePage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [started, submitted]);
 
-  // Cleanup fullscreen and exam mode on unmount
+  // Cleanup fullscreen on unmount
   useEffect(() => {
     return () => {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
-      exitExamMode();
     };
-  }, [exitExamMode]);
-
-  // Auto-submit if user navigates away during active exam
-  const startedRef = useRef(false);
-  const submittedRef = useRef(false);
-  startedRef.current = started;
-  submittedRef.current = submitted;
+  }, []);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -118,7 +108,6 @@ export default function ExamTakePage() {
     if (!exam) return;
     setTimeLeft(exam.duration * 60);
     setStarted(true);
-    enterExamMode();
     requestFullscreen();
     const initial: Record<string, ExamAnswer> = {};
     exam.questions.forEach(q => {
@@ -126,17 +115,6 @@ export default function ExamTakePage() {
     });
     setAnswers(initial);
   };
-
-  // Prevent browser close/refresh during exam
-  useEffect(() => {
-    if (!started || submitted) return;
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "You have an active exam. Leaving will auto-submit your exam!";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [started, submitted]);
 
   const selectOption = (questionId: string, optionIdx: number) => {
     setAnswers(prev => ({
@@ -208,7 +186,6 @@ export default function ExamTakePage() {
       setSubmitted(true);
       setStarted(false);
       exitFullscreen();
-      exitExamMode();
       if (timerRef.current) clearInterval(timerRef.current);
       toast.success("Exam submitted!");
     } catch (err: any) {

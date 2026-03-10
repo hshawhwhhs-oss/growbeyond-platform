@@ -7,7 +7,6 @@ import { AdminSidebar } from "@/components/AdminSidebar";
 import { DesktopUserSidebar } from "@/components/DesktopUserSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useExamMode } from "@/contexts/ExamModeContext";
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -15,18 +14,6 @@ export function AppLayout() {
   const isAdmin = userDoc?.role === "admin";
   const isMobile = useIsMobile();
   const { pathname } = useLocation();
-  const { isExamMode } = useExamMode();
-
-  // Hide all navigation in exam mode
-  if (isExamMode) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <main className="flex-1 overflow-x-hidden">
-          <Outlet />
-        </main>
-      </div>
-    );
-  }
 
   // Desktop user panel: no bottom nav. Admin panel: always bottom nav. Mobile: always bottom nav.
   const showBottomNav = isMobile || isAdmin;
